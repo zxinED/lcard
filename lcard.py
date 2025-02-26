@@ -1,9 +1,12 @@
 # encoding:utf-8
 import datetime
+import threading
+import time
 from datetime import datetime
 import plugins
 from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
+from channel.chat_message import ChatMessage
 import plugins.lcard.app_card as fun
 from plugins import *
 import requests
@@ -13,7 +16,7 @@ import requests
     desire_priority=100,
     namecn="lcard",
     desc="发送卡片式链接和小程序",
-    version="0.2.3",
+    version="0.2.1",
     author="Francis",
 )
 class lcard(Plugin):
@@ -69,25 +72,20 @@ class lcard(Plugin):
             _set_reply_text(xml_link, e_context, level=ReplyType.LINK)
             return
         elif content == "新闻直播间":
-            video_mp = fun.cctv13_live_xml(to_user_id)
+            video_mp = fun.cctv13_live_xml()
             _set_reply_text(video_mp, e_context, level=ReplyType.LINK)
             return
         elif content.startswith("点歌"):
             keyword = content[2:].replace(" ", "").strip()
-            url = f"https://api.lolimi.cn/API/yiny/?word={keyword}&n=1"
+            url = f"https://api.52vmy.cn/api/music/qq?msg={keyword}&n=1"
             resp1 = requests.get(url)
             data = resp1.json()
             music_parse = data["data"]
-            song_link = music_parse["link"]
-            pattern = r'songmid=([^&]+)'
-
-            import re
-            #提取歌曲的Id
-            song_id = re.search(pattern, song_link)
+            song_id = music_parse["songid"]
             singer=music_parse["singer"]
             song=music_parse["song"]
-            picture=music_parse["cover"]
-            if song_link :
+            picture=music_parse["picture"]
+            if song_id :
                 #以下是xml示例，替换相关参数
                 card_app = f"""<msg>
 <fromusername>{to_user_id}</fromusername>
@@ -100,7 +98,7 @@ class lcard(Plugin):
     <type>3</type>
     <showtype>0</showtype>
     <content></content>
-    <url>http://c.y.qq.com/v8/playsong.html?songmid={song_id.group(1)}</url>
+    <url>http://c.y.qq.com/v8/playsong.html?songmid={song_id}</url>
     <dataurl>http://wx.music.tc.qq.com/C4000015IWzW2NC8oN.m4a?guid=2000000280&amp;vkey=D42EDA8187C9697F31ED99CD9B3635DFBD3DAE29E4E8CF0EA549F2F247464072D17D5516DBBA34BB26D906D69E5E28239E0D557EEC5311BC&amp;uin=0&amp;fromtag=30280&amp;trace=772d0804e4366763</dataurl>
     <lowurl></lowurl>
     <lowdataurl></lowdataurl>
@@ -144,8 +142,9 @@ class lcard(Plugin):
                 _set_reply_text("未找到该歌曲", e_context, level=ReplyType.TEXT)
                 return
         #发送天气链接卡片，数据链接msn天气
-        elif content.endswith("天气"):
+        elif content.endswith("卡片天气"):
             import  re
+            content = content.replace("卡片","")
             weather_match = re.search(r"(.+?)(的)?天气", content)
             city_name = weather_match.group(1) if weather_match else "成都"
             url = f"https://api.pearktrue.cn/api/weather/?city={city_name}&id=1"
@@ -164,7 +163,7 @@ class lcard(Plugin):
                     desc = f"\n明天：{second_data_weather}  \n气温：{second_data_temperature}"
                     weather_url = "https://www.msn.cn/zh-cn/weather/"
                     image_url = "https://mmbiz.qpic.cn/mmbiz_jpg/xuic5bNARavt67O3KvoXqjJJanKwRkfIiaJT6Oiavia0icVgC9DWInofCKA655AuicqgdBukd36nFXTqHBUUvfc0uCCQ/300?wxtype=jpeg&amp;wxfrom=401"
-                    xml_link = fun.get_xml(to_user_id,weather_url, gh_id, username, title, desc, image_url)
+                    xml_link = fun.get_xml(weather_url, gh_id, username, title, desc, image_url)
                     _set_reply_text(xml_link, e_context, level=ReplyType.LINK)
                     return
                 else:
@@ -178,19 +177,17 @@ class lcard(Plugin):
             _set_reply_text(xml_app, e_context, level=ReplyType.MINIAPP)
             return
         elif content.endswith("怎么做"):
-            dish_name = content[:-3].strip()
+            global dish_name
+            if content.endswith("怎么做"):
+                dish_name = content[:-3].strip()
             url = f"https://m.xiachufang.com/search/?keyword={dish_name}"
             gh_id = "gh_fbfa5dacde93"
             username = "美食教程"
             title = "                美食教程"
             desc = f"\n🔍️ {dish_name}\n\n\n                    xiachufang.com"
             image_url = "https://mmbiz.qpic.cn/mmbiz_jpg/Uc03FJicJseLq0yQ4JqqiaIIlDB7KuiaNY7ia14ZGCfDeVXktfI9kU6ZGu4659Y3n9CVhP5oKEIYkvXJgDg9WRia5Ng/300?wx_fmt=jpeg&amp;wxfrom=1"
-            xml_link = fun.get_xml(to_user_id,url, gh_id, username, title, desc, image_url)
+            xml_link = fun.get_xml(url, gh_id, username, title, desc, image_url)
             _set_reply_text(xml_link, e_context, level=ReplyType.LINK)
-            return
-        elif content == "美团外卖":
-            xml_app = fun.meituan(to_user_id)
-            _set_reply_text(xml_app, e_context, level=ReplyType.MINIAPP)
             return
 
         huoche_keywords = ["火车票", "高铁票", "动车票"]
@@ -200,7 +197,8 @@ class lcard(Plugin):
         import re
         match = re.search(pattern, content)
 
-        if match:
+        if match and "卡片" in content:
+            content = content.replace("卡片","")
             date, departure, arrival, ticket_type = match.groups()
             departure = departure.strip()  # 去除可能存在的多余空格
             arrival = arrival.strip()  # 去除可能存在的多余空格
@@ -209,7 +207,7 @@ class lcard(Plugin):
             else:
                 date = datetime.now().strftime("%Y-%m-%d")
             # 假设以下是调用查询火车票的函数，返回查询结果
-            card_app = fun.huochepiao_app(to_user_id,content,departure, arrival, date)  # 你需要用正确的函数替换这里
+            card_app = fun.huochepiao_app(content,departure, arrival, date)  # 你需要用正确的函数替换这里
             # 假设以下代码设置用于回复用户的信息
             _set_reply_text(card_app, e_context, level=ReplyType.MINIAPP)
             return

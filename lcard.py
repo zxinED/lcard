@@ -142,9 +142,8 @@ class lcard(Plugin):
                 _set_reply_text("未找到该歌曲", e_context, level=ReplyType.TEXT)
                 return
         #发送天气链接卡片，数据链接msn天气
-        elif content.endswith("卡片天气"):
+        elif content.endswith("天气"):
             import  re
-            content = content.replace("卡片","")
             weather_match = re.search(r"(.+?)(的)?天气", content)
             city_name = weather_match.group(1) if weather_match else "成都"
             url = f"https://api.pearktrue.cn/api/weather/?city={city_name}&id=1"
@@ -197,8 +196,7 @@ class lcard(Plugin):
         import re
         match = re.search(pattern, content)
 
-        if match and "卡片" in content:
-            content = content.replace("卡片","")
+        if match:
             date, departure, arrival, ticket_type = match.groups()
             departure = departure.strip()  # 去除可能存在的多余空格
             arrival = arrival.strip()  # 去除可能存在的多余空格
